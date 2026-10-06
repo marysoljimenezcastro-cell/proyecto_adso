@@ -1,0 +1,281 @@
+The purpose of the script is to install KoboToolbox in minutes without messing with configuration files.
+It prompts the user to answer some questions to create configuration files automatically and to start docker containers based on [`kobo-docker`](https://github.com/kobotoolbox/kobo-docker "").
+
+## :warning: You _must observe_ the following when upgrading:
+
+### …from any release older than [`2.026.27`](https://github.com/kobotoolbox/kobo-install/releases/tag/2.026.27) (July 2026)
+
+Running current releases of KoboToolbox requires you to upgrade your MongoDB database. Please follow [these instructions](https://github.com/kobotoolbox/kobo-docker/blob/master/doc/June-2026-Upgrade-MongoDB8.md).
+
+If you do not, the application may not start or your data may not be visible.
+
+### …from any release older than [`2.022.44`](https://github.com/kobotoolbox/kobo-install/releases/tag/2.022.44) (November 2022)
+
+If you have already installed KoboToolbox between March 2019 and November 2022, you **must** complete [a manual upgrade process](https://github.com/kobotoolbox/kobo-docker/blob/master/doc/November-2022-Upgrade.md) before trying to upgrade. **If you do not, `kobo-install` will not be able to start.**
+
+### …from any release older than [`2.020.18`](https://github.com/kobotoolbox/kobo-install/releases/tag/2.020.18) (May 2020)
+
+Prior to release [`2.020.18`](https://github.com/kobotoolbox/kobo-install/releases/tag/2.020.18), [KPI](https://github.com/kobotoolbox/kpi) and [KoBoCAT](https://github.com/kobotoolbox/kobocat) both shared a common Postgres database. They now each have their own. **If you are upgrading an existing single-database installation, you must follow [these instructions](https://community.kobotoolbox.org/t/upgrading-to-separate-databases-for-kpi-and-kobocat/7202)** to migrate the KPI tables to a new database and adjust your configuration appropriately.
+
+If you do not want to upgrade at this time, please use the [`shared-database-obsolete`](https://github.com/kobotoolbox/kobo-install/tree/shared-database-obsolete) branch instead.
+
+### …installations made prior to March 2019
+
+If you have already installed KoboToolbox with `kobo-docker` prior March 2019,
+you **must** complete [a manual upgrade process](https://github.com/kobotoolbox/kobo-docker/#important-notice-when-upgrading-from-commit-5c2ef02-march-4-2019-or-earlier)
+before using this repository. **If you do not, `kobo-install` will not be able to start.**
+
+## Versions
+
+Release branches `release/*` (e.g. `release/2.024.36`) are the recommended branches to use with `kobo-install` on your production environment. From the `kpi` folder run `git branch -rl 'origin/release/*'` to list release branches and then switch to a release branch of your choice.
+
+Branch `main` is a pre-release of the next version. It contains new features and bug fixes.
+
+Other branches are for development purposes.
+
+## Usage
+
+`$kobo-install> python3 run.py`
+
+First time the command is executed, setup will be launched.  
+Subsequent executions will launch docker containers directly.
+
+Rebuild configuration:  
+`$kobo-install> python3 run.py --setup`
+
+Get info:  
+`$kobo-install> python3 run.py --info`
+
+Get docker logs:  
+`$kobo-install> python3 run.py --logs`
+
+Update KoboToolbox:  
+`$kobo-install> python3 run.py --update [branch or tag]`
+
+By default, fetch the latest version of `master` branch
+
+
+Stop KoboToolbox:  
+`$kobo-install> python3 run.py --stop`
+
+Get help:  
+`$kobo-install> python3 run.py --help`
+
+Get version:  
+`$kobo-install> python3 run.py --version`
+
+Build kpi and kobocat (dev mode):  
+`$kobo-install> python3 run.py --build`
+
+Run docker commands on front-end containers:  
+`$kobo-install> python3 run.py --compose-frontend [docker-compose arguments]`
+
+Run docker commands on back-end containers:  
+`$kobo-install> python3 run.py --compose-backend [docker-compose arguments]`
+
+Start maintenance mode:  
+`$kobo-install> python3 run.py --maintenance`
+
+Stop maintenance mode:  
+`$kobo-install> python3 run.py --stop-maintenance`
+
+
+## Build the configuration
+
+Setup starts with two questions, and everything else follows from them.
+
+**1. What kind of installation do you need?**
+
+- `Development` — your own workstation. `DEBUG` is on, SSRF protection is disabled, and the web server is reachable over plain HTTP on the machine itself. No domain name needed
+- `Staging` — a server running a test copy of production
+- `Production` — a server running the live instance
+
+**2. How do you want to configure this installation?**
+
+- `Quick setup` — accept every default. `kobo-docker` is expected next to `kobo-install` (`../kobo-docker`), and a few things are detected automatically (see below). Only what has no usable default is asked — see below
+- `Custom setup` — a checkbox menu opens so you pick only the sections you care about, then you are asked about those and nothing else
+
+### Automatic configuration
+
+Whatever you choose, `kobo-install` sets up on its own:
+
+|What|When|
+|---|---|
+|Installation directory, set to `../kobo-docker`|Always. Override it with the `Install directory` section|
+|Primary network interface and IP|Always. Override it with the `Network interface` section|
+|PostgreSQL and uWSGI sizing, computed from detected CPUs and RAM <sup>3</sup>|First run, staging and production. 50% of the machine for staging, 75% for production. On a multi-server frontend, the uWSGI memory limit is raised to 75% since the databases live elsewhere|
+|`console` email backend, so messages are printed instead of sent|Development, quick|
+|KPI source files, set to `../kpi` and cloned if the directory is not there yet|Development, quick. Override it with the `KPI source files` section|
+|AWS profile authentication, if `~/.aws` exists on the host|Development, quick, when you turn NLP & Qualitative Analysis on. The directory is mounted read-only into the front-end containers. S3 storage itself stays off|
+|Google Cloud application default credentials, if `~/.config/gcloud` exists on the host|Development, quick, when you turn NLP & Qualitative Analysis on. The directory is mounted read-only and the active project is read from `configurations/config_default` to pre-fill the Google questions|
+
+### What quick setup still asks
+
+On a **server** (staging or production), two answers have no usable default, so
+quick setup asks for them:
+
+- `Public domain name?` — the subdomains keep `kf`, `kc` and `ee`, and the
+  internal and private domain names are derived from the answer
+- `Support email address?` — used as the `from` address of outgoing email, to
+  request the Let's Encrypt certificates, and on the maintenance page
+
+HTTPS certificates are installed with Let's Encrypt without asking, since that
+is the default. Pick `Custom setup` and its `HTTPS & certificates` section to
+use your own reverse-proxy or load balancer instead — quick setup then keeps
+that choice on the next run.
+
+On a **development** machine, quick setup asks one question, and only when
+`~/.aws` or `~/.config/gcloud` is found on the host.
+
+It covers two separate features: Google powers transcription and translation,
+AWS Bedrock powers qualitative analysis. The question names whichever half
+those credentials can reach — `Configure NLP?`, `Configure Qualitative
+Analysis?` or both — and then asks only for the matching values.
+
+Saying yes is also what mounts those directories into the front-end containers,
+read-only, so they authenticate the way you already do. Each is mounted whole,
+every profile in it included, so a framed warning lists them just above the
+question. Saying no mounts nothing, and turns off the mounts a previous run had
+turned on.
+
+When `kobo-docker` already carries these variables there is nothing to ask —
+see below — but the directories are still mounted, so the warning is shown
+anyway. Either way it offers `Ctrl+C`: nothing is written until the end of the
+setup, and `Custom setup` is where you pick something other than the default.
+With no credentials at all, quick setup stays silent.
+
+A workstation is asked nothing else: it keeps `kobo.local` and plain HTTP.
+
+### Before the menu: server topology
+
+On a **server**, custom setup first asks whether the installation is split
+across several machines and, if it is, which role this one plays. That answer
+is not a section: it decides which sections exist. A back end has no domain
+names to serve, a front end has no database to tune, and the menu can only
+leave those out if it already knows the role.
+
+### The custom setup menu
+
+|Key|Action|
+|---|---|
+|`↑` `↓`|Move between sections|
+|`SPACE`|Check / uncheck the highlighted section|
+|`A`|Check or uncheck everything|
+|`i`|Show / hide the description of the highlighted section|
+|`ENTER`|Confirm and start answering the selected sections|
+|`q` / `ESC`|Abort setup, leaving every file on disk untouched|
+
+Sections come pre-checked for you, and the menu remembers your answer. On **later runs** the sections you picked last time come back checked, so re-running setup goes straight to what you had configured.
+
+The **first time** — or on an installation made before the menu started remembering — there is nothing to restore, so only what a fresh install cannot do without is checked: superuser credentials, plus domain names, HTTPS and SMTP on a server. The first pass stays short.
+
+A section shipped by a **newer version of kobo-install** has never been offered before, so it is checked when its values look configured — that way a new feature does not stay hidden behind a remembered selection. Everything else is one `SPACE` away.
+
+### Sections
+
+|Group|Section|Available in|
+|---|---|---|
+|Dev / Staging|KPI source files, to mount a local checkout for live editing|Development, staging|
+| |Celery & npm|Development|
+| |Web server port <sup>1</sup>|Development|
+|Infrastructure|Install directory|All|
+| |Network interface|All|
+| |Docker Compose prefix, to run several instances on one host|All|
+|Server|Domain names|Staging, production, front end|
+| |HTTPS & certificates <sup>2</sup>|Staging, production, front end|
+|Application|SMTP|All, front end|
+| |Custom YAML|All|
+|Security|Superuser credentials|All, front end|
+| |Secret keys|All, front end|
+| |Session duration|Staging, production, front end|
+|Performance|PostgreSQL tuning <sup>3</sup>|Staging, production, back end|
+| |Redis cache memory|Staging, production, back end|
+| |uWSGI tuning|Staging, production, front end|
+|Databases|PostgreSQL credentials|All, back end|
+| |MongoDB|All, back end|
+| |Redis <sup>4</sup>|All, back end|
+| |Back-end service ports|Staging, production, back end|
+|External services|AWS S3 storage <sup>5</sup>|All, front end|
+| |Cloud credentials (AWS & Google)|Development, front end|
+| |NLP and qualitative analysis|Development, front end|
+| |Google Analytics & Maps|Staging, production, front end|
+| |Sentry|Staging, production, front end|
+|Maintenance|Backups <sup>6</sup>|All. Database schedules on the back end, media on a front end not using S3|
+
+Checking a section is the consent to configure it — there is no second "do you want to tweak this?" question once you have selected it.
+
+`Cloud credentials (AWS & Google)` mounts your host `~/.aws` and `~/.config/gcloud` into the front-end containers so they authenticate with your own credentials. Both mounts are independent of everything else: `~/.aws` does not turn S3 storage on, and `~/.config/gcloud` does not turn NLP on. Neither is offered on a server, which authenticates with its own credentials.
+
+`NLP and qualitative analysis` covers two features with two providers. Google drives transcription and translation (`GS_BUCKET_NAME`, `CONSTANCE_ASR_MT_GOOGLE_PROJECT_ID`); AWS Bedrock drives qualitative analysis (`AWS_BEDROCK_REGION_NAME`). Each group is asked only when the containers can reach that provider — mounted `~/.config/gcloud` for Google, a mounted `~/.aws` or an S3 access key for AWS — so a machine set up for one of them is not asked for the other. `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_QUOTA_PROJECT` are what the Google SDK needs to work with application default credentials and always hold the same project, so they are derived rather than asked. The section is offered on a development machine only: a server gets these settings from `Constance`.
+
+If `kobo-docker/docker-compose.frontend.custom.yml` already defines any of those variables, that file wins. `kobo-install` says so, leaves the NLP block of `external_services.txt` commented out and does not ask — one variable, one source of truth. Remove them from the custom file if you would rather `kobo-install` managed them. The AutoQA model ARNs (`AUTOQA_CLAUDESONNET_MODEL_AIP_ARN`, `AUTOQA_OSS120_MODEL_AIP_ARN`) are not needed for local development; production instances that want them set them through that custom file.
+
+<sup>1)</sup> _The host port the web server listens on, `80` by default. Useful when something else already uses port 80 on your workstation_
+
+<sup>2)</sup> _HTTPS certificates must be installed on a Reverse Proxy.
+`kobo-install` can install one and use `Let's Encrypt` to generate certificates
+ thanks
+ to [nginx-certbot project](https://github.com/wmnnd/nginx-certbot "")_
+
+<sup>3)</sup> _Custom settings are provided by [PostgreSQL Configuration Tool API](https://github.com/sebastianwebber/pgconfig-api "")_
+
+<sup>4)</sup> _Redis password is optional but **strongly** recommended_
+
+<sup>5)</sup> _If AWS storage is selected, credentials must be provided if backups are activated_
+
+<sup>6)</sup> _If AWS credentials are provided, backups are sent to configured bucket_
+
+## Requirements
+
+- Linux <sup>5</sup> / macOS <sup>6</sup>
+- Python 3.12+
+- [Docker](https://www.docker.com/get-started "") <sup>7</sup>
+- Available TCP Ports: <sup>8</sup>
+
+    1. 80 NGINX
+    1. 443 NGINX (if you use kobo-install with LetsEncrypt proxy)
+    2. Additional ports when the `Backend service ports` section has been selected
+        1. 5432 PostgreSQL
+        3. 6379-6380 redis
+        4. 27017 MongoDB
+
+    _**WARNING:**_
+
+    - _If you use a firewall, be sure to open traffic publicly on NGINX port, otherwise kobo-install cannot work_
+    - _By default, additional ports are not exposed except when using multi servers configuration. If you choose to expose them, **be sure to not expose them publicly** (e.g. use a firewall and allow traffic between front-end and back-end containers only. NGINX port still has to stay publicly opened though)._
+
+<sup>5)</sup> _It has been tested with Ubuntu 22.04 and 24.04_
+
+<sup>6)</sup> _Docker on macOS is slow. First boot usually takes a while to be ready. You may have to answer `Yes` once or twice to question `Wait for another 600 seconds?` when prompted_
+
+<sup>7)</sup> _Compose V1 is **NOT** supported anymore. It has reached its EOL from July 2023_
+
+<sup>8)</sup> _These are defaults but can be changed with `Custom setup`_
+
+
+## Development
+
+### React files: Hot Module Reload (HMR) by Webpack
+For frontend file changes to take effect, run watch in terminal and open/refresh http://kf.kobo.local to see your changes hot reloaded (don’t worry about first timeout error, it’s still building):
+
+```shell
+./run.py -cf run --rm --publish 3000:3000 kpi npm run watch && ./run.py -cf restart kpi
+```
+
+The script creates a new docker container for frontend in `npm run watch` mode within the same docker network with the same (internal) port. 
+Using the same port will overshadow the original kpi container’s ports and nginx will instantly serve the new container instead. 
+Unfortunately the port overshadowing doesn’t nicely undo itself and a restart of `kpi` is required. 
+Once the container exits (hit CTRL+C **once**), the container will automatically remove itself and initiate kpi restart which will take up to few minutes.
+
+It should as well handle dependency changes, maybe except for webpack itself.
+
+You can also [this gist](https://gist.github.com/jnm/dd323e0ff5be0d79e12e76bb9dfb7aed) to refresh front-end files without rebuilding the container.
+
+### Tests
+
+Tests require Python 3.12+ and can be run with `pytest`:
+
+```shell
+$kobo-install> pip install -r requirements_tests.txt
+$kobo-install> pytest -vv
+```
